@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width" />
+
+    <style>
+      body { font-family: Tahoma, Geneva, sans-serif; }
+    </style>
+
+    <!-- chat css -->
+    <link rel="stylesheet" type="text/css" href="chat.css"/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+
+    <!-- colyseus.js client -->
+    <script type="text/javascript" src="https://raw.githack.com/colyseus/colyseus.js/master/dist/colyseus.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+
+    <style type="text/css">
+      .player {
+        width: 100px;
+        height: 100px;
+        position: absolute;
+        padding-top: 24px;
+        box-sizing: border-box;
+        left: 0;
+        top: 0;
+      }
+    </style>
+
+  </head>
+  <body>
+    <p>This example shows how to use custom data structures in your room's state.</p>
+
+    <strong>commands</strong><br>
+
+    <button onclick="up()">up</button>
+    <button onclick="down()">down</button>
+    <br />
+    <button onclick="left()">left</button>
+    <button onclick="right()">right</button>
+
+    <br />
+
+    <strong>Messages</strong><br>
+
+    <section class="chatbox">
+      <section class="chat-window" id="messages">
+        <!-- all messages go here -->
+      </section>
+      <form id="form" class="chat-input" onsubmit="return false;">
+        <input id="input" type="text" value="" autocomplete="on" placeholder="Type a message" autofocus/>
+        <button type="submit" value="send">
+          <i class="material-icons" style="color:blue;">send</i>
+        </button>
+      </form>
+    </section>
+
+    <script>
+        var host = window.document.location.host.replace(/:.*/, '');
+
+        var client = new Colyseus.Client(location.protocol.replace("http", "ws") + "//" + host + (location.port ? ':' + location.port : ''));
+        var room;
+
+        client.joinOrCreate("state_handler").then(room_instance => {
+            room = room_instance
+
+            var players = {};
+            var colors = ['red', 'green', 'yellow', 'blue', 'cyan', 'magenta'];
+
+            /* chat attachment */
+            room.onStateChange.once(function(state) {
+                console.log("initial room state:", state);
+                //console.log(state.players)
+            });
+
+            // new room state
+            room.onStateChange(function(state) {
+                // this signal is triggered on each patch
+            });
+
+            // listen to patches coming from the server
+            room.onMessage("messages", function(message) {
+              //{message.text, message.player}
+              var messageSideClass = "msg-remote";
+              // helper green/normal mushrooms for people
+              var imageLink = message.player.image
+
+              if (message.player.sessionId == room.sessionId){
+                messageSideClass = "msg-self";
+                // credit to this place and this creator!
+                imageLink = "http://icons.iconarchive.com/icons/ph03nyx/super-mario/128/Retro-Mushroom-Super-icon.png";
+              }
+
+              console.log(message.player)
+              // get message's hour/min/sec
+              var time = new Date().toTimeString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, "$1");
+
+              $('#messages').append(
+                '<article class="msg-container ' + messageSideClass + '" id="' + 'msg-0' + '">' + // id for the specific message container
+                '<div class="msg-box" style="background:' + message.player.color + '">' +
+                '<img class="user-img" src="' + imageLink + '" />' +
+                '<div class="flr"><div class="messages"><p class="msg" id="' + 'msg-0' + '">' // id for the specific message container
+                + message.text + '</p></div>' + // actual message text
+                '<span class="timestamp"><span class="username">' + message.player.name + '</span>&bull;<span class="posttime">'
+                + time + '</span></span></div></div></article>' // time
+              );
+
+              // and scroll down to see the message
+              $('#messages').stop().animate ({
+                scrollTop: $('#messages')[0].scrollHeight
+              });
+
+              // clear all messages past 40
+              var messageCount = $('#messages article').length;
+              var messageMax = 40;
+
+              if (messageCount > messageMax) {
+                  $('#messages').find('article:first').remove();
+              }
+            });
+
+            // send message to room on submit
+            document.querySelector("#form").onsubmit = function(e) {
+                e.preventDefault();
+
+                var input = document.querySelector("#input");
+
+                if (!input.value) return;
+
+                // send data to room
+                room.send("message",
+                  {
+                    text: input.value,
+                    player: room.state.players[room.sessionId]
+                  }
+                );
+
+                input.value = "";
+            }
+
+            /* move blocks */
+            // listen to patches coming from the server
+            room.state.players.onAdd = function (player, sessionId) {
+                // when the player is added, store his sessionId as a var
+                console.log("p, sId", player, sessionId);
+
+                var dom = document.createElement("div");
+                dom.className = "player";
+                dom.style.left = player.x + "px";
+                dom.style.top = player.y + "px";
+                dom.style.background = colors[Math.floor(Math.random() * colors.length)];
+                dom.innerText = "Player " + sessionId;
+
+                // add player name, make innerText/player var as a random name
+                players[sessionId] = dom;
+                document.body.appendChild(dom);
+            }
+
+            room.state.players.onRemove = function (player, sessionId) {
+                document.body.removeChild(players[sessionId]);
+                delete players[sessionId];
+            }
+
+            room.state.players.onChange = function (player, sessionId) {
+                var dom = players[sessionId];
+                dom.style.left = player.x + "px";
+                dom.style.top = player.y + "px";
+            }
+
+            window.addEventListener("keydown", function (e) {
+                if (e.which === 38) {
+                    up();
+
+                } else if (e.which === 39) {
+                    right();
+
+                } else if (e.which === 40) {
+                    down();
+
+                } else if (e.which === 37) {
+                    left();
+                }
+            });
+
+        });
+
+        function up () {
+            room.send("move", { y: -1 });
+        }
+
+        function right () {
+            room.send("move", { x: 1 });
+        }
+
+        function down () {
+            room.send("move", { y: 1 })
+        }
+
+        function left () {
+            room.send("move", { x: -1 })
+        }
+
+    </script>
+  </body>
+</html>
